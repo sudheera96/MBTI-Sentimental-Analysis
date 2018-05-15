@@ -1,0 +1,72 @@
+library(dplyr)
+library(plyr)
+library(tidyr)
+mbti_1 <- mbti_1 %>% 
+  mutate(posts = strsplit(as.character(posts), "[|||]")) %>% 
+  unnest(posts)
+mbti_1 <- mbti_1[!(is.na(mbti_1$posts) | mbti_1$posts==""), ]
+mbti_1$isURL <- grepl('$http',mbti_1$posts,TRUE)
+mbti_1<- subset(mbti_1,mbti_1$isURL == 0)
+mbti_1$type <- strtrim(mbti_1$type,1)
+library(tidytext)
+library(quanteda)
+entQ <- corpus(subset(mbti_1,mbti_1$type=="E"),text_field = "posts")
+intQ <- corpus(subset(mbti_1,mbti_1$type=="I"),text_field = "posts")
+entDF <- tidy(entQ)
+intDF <- tidy(intQ)
+
+entDF$ntok <- ntoken(entDF$text)
+entDF$ntyp <- ntype(entDF$text)
+entDF$uniq <- 100.0 / (entDF$ntok/entDF$ntyp)
+entDF$avgWPS <- entDF$ntok / nsentence(entDF$text)
+entDF <- tibble::rowid_to_column(entDF, "ID")
+
+intDF$ntok <- ntoken(intDF$text)
+intDF$ntyp <- ntype(intDF$text)
+intDF$uniq <- 100.0 / (intDF$ntok/intDF$ntyp)
+intDF$avgWPS <- intDF$ntok / nsentence(intDF$text)
+intDF <- tibble::rowid_to_column(intDF, "ID")
+
+entS <- dfm(entQ, dictionary = data_dictionary_LSD2015)
+entS <- tidy(entS)
+entPlot <- cbind(entS) # make a copy to use later
+entS <- mutate(entS, ID = as.numeric(rownames(entS)))
+entN <- subset(entS,entS$term=="negative")
+entN$document <- as.integer(entN$document)
+
+
+intS <- dfm(intQ, dictionary = data_dictionary_LSD2015)
+intS <- tidy(intS)
+intPlot <- cbind(intS) # make a copy to use later
+intS <- mutate(intS, ID = as.numeric(rownames(intS)))
+intN <- subset(intS,intS$term=="negative")
+intN$document <- as.integer(intN$document)
+
+mbtiDF <- data.frame(rbind(entDF,intDF))
+
+
+library(randomForest)
+model<-randomForest(y=factor(mbtiDF$type),x=cbind(mbtiDF$uniq,mbtiDF$avgWPS),ntree = 10)
+summary(model)
+
+summary(glm(ifelse(type=='I',0,1)~ uniq + avgWPS, data = mbtiDF,family=binomial()))
+library(ggplot2)
+install.packages('ggmap')
+library(ggmap)
+pie(table(entPlot$term))
+pie(table(intPlot$term))
+
+entWC <- dfm(entQ, remove = stopwords("english"), remove_punct = TRUE)
+intWC <- dfm(intQ, remove = stopwords("english"), remove_punct = TRUE)
+
+set.seed(100)
+textplot_wordcloud(entWC, min.freq = 6, random.order = FALSE,
+                   rot.per = .25, 
+                   colors = RColorBrewer::brewer.pal(8,"Dark2"),
+                   scale=c(4,.5),
+                   max.words =40)
+textplot_wordcloud(intWC, min.freq = 6, random.order = FALSE,
+                   rot.per = .25, 
+                   colors = RColorBrewer::brewer.pal(8,"Dark2"),
+                   scale=c(4,.5),
+                   max.words =40)
